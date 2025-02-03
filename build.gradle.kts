@@ -1,6 +1,5 @@
 plugins {
     kotlin("jvm") version "2.1.10"
-    kotlin("plugin.serialization") version "2.1.10"
 
     `maven-publish`
 }
@@ -13,14 +12,14 @@ repositories {
 }
 
 dependencies {
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
+    implementation("com.google.code.gson:gson:2.12.1")
 
     testImplementation(kotlin("test"))
 }
 
 tasks.test {
     useJUnitPlatform()
-    enabled = false // Disable when building
+    //enabled = false // Disable when building
 }
 
 kotlin {

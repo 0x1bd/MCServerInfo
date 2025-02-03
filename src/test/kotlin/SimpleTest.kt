@@ -1,3 +1,5 @@
+import com.google.gson.Gson
+import com.google.gson.JsonPrimitive
 import com.kvxd.mcserverinfo.MinecraftServerPing
 import com.kvxd.mcserverinfo.ServerStatusResponse
 import kotlin.test.Test
@@ -9,12 +11,12 @@ class SimpleTest {
     fun test() {
         val expected = ServerStatusResponse(
             version = ServerStatusResponse.Version("1.21.4", 769),
-            description = "A Minecraft Server",
+            description = JsonPrimitive("A Minecraft Server"),
             players = ServerStatusResponse.Players(max = 20, online = 0)
         )
 
         val serverAddress = "localhost"
-        val minecraftServerPing = MinecraftServerPing(serverAddress)
+        val minecraftServerPing = MinecraftServerPing(serverAddress, gson = Gson())
 
         val response = minecraftServerPing.ping()
 
