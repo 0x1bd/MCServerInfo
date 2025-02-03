@@ -2,13 +2,14 @@ import com.google.gson.Gson
 import com.google.gson.JsonPrimitive
 import com.kvxd.mcserverinfo.MinecraftServerPing
 import com.kvxd.mcserverinfo.ServerStatusResponse
+import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
 class SimpleTest {
 
     @Test
-    fun test() {
+    fun test() = runBlocking {
         val expected = ServerStatusResponse(
             version = ServerStatusResponse.Version("1.21.4", 769),
             description = JsonPrimitive("A Minecraft Server"),
@@ -18,9 +19,10 @@ class SimpleTest {
         val serverAddress = "localhost"
         val minecraftServerPing = MinecraftServerPing(serverAddress, gson = Gson())
 
+        // Ping the server and get the response
         val response = minecraftServerPing.ping()
 
+        // Assert that the response matches the expected value
         assertTrue { response == expected }
     }
-
 }

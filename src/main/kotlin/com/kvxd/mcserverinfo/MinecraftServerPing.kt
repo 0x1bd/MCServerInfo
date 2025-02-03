@@ -1,12 +1,15 @@
 package com.kvxd.mcserverinfo
 
 import com.google.gson.Gson
-import java.io.DataInputStream
-import java.io.DataOutputStream
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.net.InetSocketAddress
-import java.net.Socket
+import java.nio.ByteBuffer
+import java.nio.channels.AsynchronousSocketChannel
+import java.nio.channels.CompletionHandler
 import java.nio.charset.StandardCharsets
+import java.util.concurrent.CompletableFuture
 
 class MinecraftServerPing(
     private val serverAddress: String,
@@ -15,30 +18,34 @@ class MinecraftServerPing(
     private val gson: Gson
 ) {
     private val protocolVersion: Int = -1 // Latest
-    private val socket: Socket = Socket()
 
-    fun ping(): ServerStatusResponse {
-        socket.connect(InetSocketAddress(serverAddress, serverPort), timeout)
+    suspend fun ping(): ServerStatusResponse = withContext(Dispatchers.IO) {
+        val socketChannel = AsynchronousSocketChannel.open()
+        val connectFuture = CompletableFuture<Void>()
 
-        val outputStream = DataOutputStream(socket.getOutputStream())
-        val inputStream = DataInputStream(socket.getInputStream())
+        socketChannel.connect(InetSocketAddress(serverAddress, serverPort), null, object : CompletionHandler<Void, Void> {
+            override fun completed(result: Void?, attachment: Void?) {
+                connectFuture.complete(null)
+            }
+
+            override fun failed(exc: Throwable, attachment: Void?) {
+                connectFuture.completeExceptionally(exc)
+            }
+        })
+
+        connectFuture.get() // Wait for connection
 
         try {
-            sendHandshake(outputStream)
-
-            sendStatusRequest(outputStream)
-
-            val response = receiveStatusResponse(inputStream)
-
-            return gson.fromJson(response, ServerStatusResponse::class.java )
-        } catch (e: Exception) {
-            throw IOException("Failed to ping server: ${e.message}", e)
+            sendHandshake(socketChannel)
+            sendStatusRequest(socketChannel)
+            val response = receiveStatusResponse(socketChannel)
+            return@withContext gson.fromJson(response, ServerStatusResponse::class.java)
         } finally {
-            socket.close()
+            socketChannel.close()
         }
     }
 
-    private fun sendHandshake(outputStream: DataOutputStream) {
+    private suspend fun sendHandshake(socketChannel: AsynchronousSocketChannel) {
         val handshakePacket = PacketBuilder()
             .writeVarInt(0x00)
             .writeVarInt(protocolVersion)
@@ -46,53 +53,61 @@ class MinecraftServerPing(
             .writeShort(serverPort)
             .writeVarInt(1) // 1 = Status
 
-        writeVarInt(outputStream, handshakePacket.toByteArray().size)
-        outputStream.write(handshakePacket.toByteArray())
+        writeVarInt(socketChannel, handshakePacket.toByteArray().size)
+        socketChannel.write(ByteBuffer.wrap(handshakePacket.toByteArray())).get()
     }
 
-    private fun sendStatusRequest(outputStream: DataOutputStream) {
+    private suspend fun sendStatusRequest(socketChannel: AsynchronousSocketChannel) {
         val statusRequestPacket = PacketBuilder()
             .writeVarInt(0x00)
 
-        writeVarInt(outputStream, statusRequestPacket.toByteArray().size)
-        outputStream.write(statusRequestPacket.toByteArray())
+        writeVarInt(socketChannel, statusRequestPacket.toByteArray().size)
+        socketChannel.write(ByteBuffer.wrap(statusRequestPacket.toByteArray())).get()
     }
 
-    private fun receiveStatusResponse(inputStream: DataInputStream): String {
-        readVarInt(inputStream)
-        val packetId = readVarInt(inputStream)
+    private suspend fun receiveStatusResponse(socketChannel: AsynchronousSocketChannel): String {
+        val length = readVarInt(socketChannel)
+        val packetId = readVarInt(socketChannel)
 
         if (packetId != 0x00) {
             throw IOException("Invalid packet ID: $packetId")
         }
 
-        val jsonResponseLength = readVarInt(inputStream)
-        val jsonResponse = ByteArray(jsonResponseLength)
-        inputStream.readFully(jsonResponse)
+        val jsonResponseLength = readVarInt(socketChannel)
+        val jsonResponseBuffer = ByteBuffer.allocate(jsonResponseLength)
+        socketChannel.read(jsonResponseBuffer).get()
+        jsonResponseBuffer.flip()
 
-        return String(jsonResponse, StandardCharsets.UTF_8)
+        return StandardCharsets.UTF_8.decode(jsonResponseBuffer).toString()
     }
 
-    private fun writeVarInt(outputStream: DataOutputStream, value: Int) {
+    private suspend fun writeVarInt(socketChannel: AsynchronousSocketChannel, value: Int) {
+        val buffer = ByteBuffer.allocate(5) // Max size for a VarInt
         var remainingValue = value
         while (true) {
             if ((remainingValue and 0x7F) == remainingValue) {
-                outputStream.writeByte(remainingValue)
-                return
+                buffer.put(remainingValue.toByte())
+                break
             }
-            outputStream.writeByte((remainingValue and 0x7F) or 0x80)
+            buffer.put((remainingValue and 0x7F or 0x80).toByte())
             remainingValue = remainingValue ushr 7
         }
+        buffer.flip()
+        socketChannel.write(buffer).get()
     }
 
-    private fun readVarInt(inputStream: DataInputStream): Int {
+    private suspend fun readVarInt(socketChannel: AsynchronousSocketChannel): Int {
+        val buffer = ByteBuffer.allocate(1)
         var value = 0
         var position = 0
         var byte: Int
         do {
-            byte = inputStream.readByte().toInt()
+            socketChannel.read(buffer).get()
+            buffer.flip()
+            byte = buffer.get().toInt() and 0xFF
             value = value or ((byte and 0x7F) shl position)
             position += 7
+            buffer.clear()
         } while (byte and 0x80 != 0)
         return value
     }

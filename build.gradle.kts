@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "com.kvxd"
-version = "0.1.4.1"
+version = "0.1.5"
 
 repositories {
     mavenCentral()
@@ -13,6 +13,7 @@ repositories {
 
 dependencies {
     implementation("com.google.code.gson:gson:2.12.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1")
 
     testImplementation(kotlin("test"))
 }
