@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "com.kvxd"
-version = "0.1.4"
+version = "0.1.4.1"
 
 repositories {
     mavenCentral()

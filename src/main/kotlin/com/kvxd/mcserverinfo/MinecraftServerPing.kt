@@ -30,8 +30,6 @@ class MinecraftServerPing(
 
             val response = receiveStatusResponse(inputStream)
 
-            println(response)
-
             return gson.fromJson(response, ServerStatusResponse::class.java )
         } catch (e: Exception) {
             throw IOException("Failed to ping server: ${e.message}", e)
