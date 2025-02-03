@@ -1,16 +1,17 @@
 package com.kvxd.mcserverinfo
 
-import kotlinx.serialization.Serializable
+import com.google.gson.JsonElement
 
-@Serializable
 data class ServerStatusResponse(
     val version: Version,
-    val description: String,
+    val description: JsonElement,
     val players: Players,
+    val favicon: String? = null,
 ) {
-    @Serializable
+
     data class Version(val name: String, val protocol: Int)
 
-    @Serializable
-    data class Players(val max: Int, val online: Int)
+    data class Players(val max: Int, val online: Int, val sample: List<Player>? = null)
+
+    data class Player(val name: String, val id: String)
 }

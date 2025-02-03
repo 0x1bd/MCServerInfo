@@ -1,6 +1,6 @@
 package com.kvxd.mcserverinfo
 
-import kotlinx.serialization.json.Json
+import com.google.gson.Gson
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.IOException
@@ -12,6 +12,7 @@ class MinecraftServerPing(
     private val serverAddress: String,
     private val serverPort: Int = 25565,
     private val timeout: Int = 5000,
+    private val gson: Gson
 ) {
     private val protocolVersion: Int = -1 // Latest
     private val socket: Socket = Socket()
@@ -29,7 +30,9 @@ class MinecraftServerPing(
 
             val response = receiveStatusResponse(inputStream)
 
-            return Json.decodeFromString(response)
+            println(response)
+
+            return gson.fromJson(response, ServerStatusResponse::class.java )
         } catch (e: Exception) {
             throw IOException("Failed to ping server: ${e.message}", e)
         } finally {
