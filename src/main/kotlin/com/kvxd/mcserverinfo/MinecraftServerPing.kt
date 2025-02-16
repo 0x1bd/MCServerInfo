@@ -3,13 +3,10 @@ package com.kvxd.mcserverinfo
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.IOException
+import java.io.*
 import java.net.InetSocketAddress
-import java.nio.ByteBuffer
-import java.nio.channels.AsynchronousSocketChannel
-import java.nio.channels.CompletionHandler
+import java.net.Socket
 import java.nio.charset.StandardCharsets
-import java.util.concurrent.CompletableFuture
 
 class MinecraftServerPing(
     private val serverAddress: String,
@@ -19,95 +16,87 @@ class MinecraftServerPing(
 ) {
     private val protocolVersion: Int = -1 // Latest
 
-    suspend fun ping(): ServerStatusResponse = withContext(Dispatchers.IO) {
-        val socketChannel = AsynchronousSocketChannel.open()
-        val connectFuture = CompletableFuture<Void>()
+    fun ping(): ServerStatusResponse {
+        val socket = Socket()
+        socket.use { socket ->
+            socket.connect(InetSocketAddress(serverAddress, serverPort), timeout)
+            socket.soTimeout = timeout
 
-        socketChannel.connect(InetSocketAddress(serverAddress, serverPort), null, object : CompletionHandler<Void, Void> {
-            override fun completed(result: Void?, attachment: Void?) {
-                connectFuture.complete(null)
-            }
-
-            override fun failed(exc: Throwable, attachment: Void?) {
-                connectFuture.completeExceptionally(exc)
-            }
-        })
-
-        connectFuture.get() // Wait for connection
-
-        try {
-            sendHandshake(socketChannel)
-            sendStatusRequest(socketChannel)
-            val response = receiveStatusResponse(socketChannel)
-            return@withContext gson.fromJson(response, ServerStatusResponse::class.java)
-        } finally {
-            socketChannel.close()
+            sendHandshake(socket)
+            sendStatusRequest(socket)
+            val response = receiveStatusResponse(socket)
+            return gson.fromJson(response, ServerStatusResponse::class.java)
         }
     }
 
-    private suspend fun sendHandshake(socketChannel: AsynchronousSocketChannel) {
+    private fun sendHandshake(socket: Socket) {
         val handshakePacket = PacketBuilder()
             .writeVarInt(0x00)
             .writeVarInt(protocolVersion)
             .writeString(serverAddress)
             .writeShort(serverPort)
             .writeVarInt(1) // 1 = Status
+            .toByteArray()
 
-        writeVarInt(socketChannel, handshakePacket.toByteArray().size)
-        socketChannel.write(ByteBuffer.wrap(handshakePacket.toByteArray())).get()
+        val outputStream = socket.getOutputStream()
+        writeVarInt(outputStream, handshakePacket.size)
+        outputStream.write(handshakePacket)
+        outputStream.flush()
     }
 
-    private suspend fun sendStatusRequest(socketChannel: AsynchronousSocketChannel) {
+    private fun sendStatusRequest(socket: Socket) {
         val statusRequestPacket = PacketBuilder()
             .writeVarInt(0x00)
+            .toByteArray()
 
-        writeVarInt(socketChannel, statusRequestPacket.toByteArray().size)
-        socketChannel.write(ByteBuffer.wrap(statusRequestPacket.toByteArray())).get()
+        val outputStream = socket.getOutputStream()
+        writeVarInt(outputStream, statusRequestPacket.size)
+        outputStream.write(statusRequestPacket)
+        outputStream.flush()
     }
 
-    private suspend fun receiveStatusResponse(socketChannel: AsynchronousSocketChannel): String {
-        val length = readVarInt(socketChannel)
-        val packetId = readVarInt(socketChannel)
+    private fun receiveStatusResponse(socket: Socket): String {
+        val inputStream = socket.getInputStream()
+        val length = readVarInt(inputStream)
+        val packetId = readVarInt(inputStream)
 
         if (packetId != 0x00) {
             throw IOException("Invalid packet ID: $packetId")
         }
 
-        val jsonResponseLength = readVarInt(socketChannel)
-        val jsonResponseBuffer = ByteBuffer.allocate(jsonResponseLength)
-        socketChannel.read(jsonResponseBuffer).get()
-        jsonResponseBuffer.flip()
+        val jsonResponseLength = readVarInt(inputStream)
+        val jsonResponseBytes = ByteArray(jsonResponseLength)
+        var read = 0
+        while (read < jsonResponseLength) {
+            val count = inputStream.read(jsonResponseBytes, read, jsonResponseLength - read)
+            if (count == -1) throw EOFException("Unexpected end of stream")
+            read += count
+        }
 
-        return StandardCharsets.UTF_8.decode(jsonResponseBuffer).toString()
+        return String(jsonResponseBytes, StandardCharsets.UTF_8)
     }
 
-    private suspend fun writeVarInt(socketChannel: AsynchronousSocketChannel, value: Int) {
-        val buffer = ByteBuffer.allocate(5) // Max size for a VarInt
+    private fun writeVarInt(outputStream: OutputStream, value: Int) {
         var remainingValue = value
         while (true) {
             if ((remainingValue and 0x7F) == remainingValue) {
-                buffer.put(remainingValue.toByte())
+                outputStream.write(remainingValue)
                 break
             }
-            buffer.put((remainingValue and 0x7F or 0x80).toByte())
+            outputStream.write((remainingValue and 0x7F) or 0x80)
             remainingValue = remainingValue ushr 7
         }
-        buffer.flip()
-        socketChannel.write(buffer).get()
     }
 
-    private suspend fun readVarInt(socketChannel: AsynchronousSocketChannel): Int {
-        val buffer = ByteBuffer.allocate(1)
+    private fun readVarInt(inputStream: InputStream): Int {
         var value = 0
         var position = 0
         var byte: Int
         do {
-            socketChannel.read(buffer).get()
-            buffer.flip()
-            byte = buffer.get().toInt() and 0xFF
+            byte = inputStream.read()
+            if (byte == -1) throw EOFException("Unexpected end of stream")
             value = value or ((byte and 0x7F) shl position)
             position += 7
-            buffer.clear()
         } while (byte and 0x80 != 0)
         return value
     }
