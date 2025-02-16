@@ -66,6 +66,7 @@ class MinecraftServerPing(
 
     private fun receiveStatusResponse(socket: Socket): String {
         val inputStream = socket.getInputStream()
+        val length = readVarInt(inputStream)
         val packetId = readVarInt(inputStream)
 
         if (packetId != 0x00) {
