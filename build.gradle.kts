@@ -5,15 +5,19 @@ plugins {
 }
 
 group = "com.kvxd"
-version = "0.1.6"
+version = "0.2.0"
 
 repositories {
     mavenCentral()
+
+    maven("https://repo.papermc.io/repository/maven-public/")
 }
 
 dependencies {
     implementation("com.google.code.gson:gson:2.12.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1")
+    implementation("net.kyori:adventure-text-serializer-gson:4.18.0")
+    implementation("net.kyori:adventure-text-serializer-legacy:4.18.0")
 
     testImplementation(kotlin("test"))
 }

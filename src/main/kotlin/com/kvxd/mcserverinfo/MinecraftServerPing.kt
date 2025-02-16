@@ -1,8 +1,7 @@
 package com.kvxd.mcserverinfo
 
 import com.google.gson.Gson
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer
 import java.io.*
 import java.net.InetSocketAddress
 import java.net.Socket
@@ -12,9 +11,19 @@ class MinecraftServerPing(
     private val serverAddress: String,
     private val serverPort: Int = 25565,
     private val timeout: Int = 5000,
-    private val gson: Gson
+    private val gson: Gson = createDefaultGson()
 ) {
     private val protocolVersion: Int = -1 // Latest
+
+    val reachable: Boolean
+        get() = try {
+            Socket().use { socket ->
+                socket.connect(InetSocketAddress(serverAddress, serverPort), timeout)
+                true
+            }
+        } catch (e: IOException) {
+            false
+        }
 
     fun ping(): ServerStatusResponse {
         val socket = Socket()
@@ -57,7 +66,6 @@ class MinecraftServerPing(
 
     private fun receiveStatusResponse(socket: Socket): String {
         val inputStream = socket.getInputStream()
-        val length = readVarInt(inputStream)
         val packetId = readVarInt(inputStream)
 
         if (packetId != 0x00) {
@@ -99,5 +107,9 @@ class MinecraftServerPing(
             position += 7
         } while (byte and 0x80 != 0)
         return value
+    }
+
+    companion object {
+        private fun createDefaultGson(): Gson = GsonComponentSerializer.gson().serializer()
     }
 }
