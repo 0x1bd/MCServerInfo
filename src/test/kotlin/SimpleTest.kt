@@ -4,14 +4,16 @@ import com.kvxd.mcserverinfo.OnlineMode
 import kotlinx.coroutines.runBlocking
 import net.kyori.adventure.text.Component
 import kotlin.random.Random
+import kotlin.random.nextInt
 import kotlin.system.measureTimeMillis
 import kotlin.test.*
 
 class SimpleTest {
 
     @Test
-    fun test() = runBlocking {
+    fun local() = runBlocking {
         val t = measureTimeMillis {
+            
             val expected = MCServerQueryResponse(
                 version = MCServerQueryResponse.Version("1.21.4", 769),
                 description = Component.text("A Minecraft Server"),
@@ -20,7 +22,11 @@ class SimpleTest {
 
             val query = MCServerQuery.create {
                 address = "localhost"
-                encryptionCheckUsername = "CoolGuy69"
+                
+                encryption {
+                    enable()
+                    username = "CoolGuy69"
+                }
             }
 
             val response = query.query()
@@ -29,6 +35,17 @@ class SimpleTest {
 
             assertEquals(query.isEncrypted(response), OnlineMode.OFFLINE)
             assertEquals(query.isEncrypted(), OnlineMode.OFFLINE)
+            
+            repeat(50) {
+                MCServerQuery.create {
+                    address = "localhost"
+                    
+                    encryption {
+                        enable()
+                        username = "CoolGuy_" + Random.nextInt(0..100)
+                    }
+                }.isEncrypted()
+            }
 
             assertTrue { response == expected }
         }
@@ -37,11 +54,15 @@ class SimpleTest {
 
 
     @Test
-    fun testHypixel() = runBlocking {
+    fun hypixel() = runBlocking {
         val t = measureTimeMillis {
             val query = MCServerQuery.create {
-                address = "play.hypixel.net"
-                encryptionCheckUsername = "test"
+                address = "localhost"
+                
+                encryption {
+                    enable()
+                    username = "CoolGuy69"
+                }
             }
 
             val response = query.query()

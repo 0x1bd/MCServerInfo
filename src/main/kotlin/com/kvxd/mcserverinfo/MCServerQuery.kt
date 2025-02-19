@@ -39,6 +39,8 @@ class MCServerQuery private constructor(
     }
 
     suspend fun isEncrypted(query: MCServerQueryResponse? = null): OnlineMode = withTimeout(configuration.timeout) {
+        require(configuration.encryptionCheck.enabled) { "Encryption checking is disabled" }
+        
         val status = query ?: query()
         val protocolVersion = status.version.protocol
 
@@ -95,7 +97,7 @@ class MCServerQuery private constructor(
 
     private fun sendLoginStart(channel: AsynchronousSocketChannel, protocolVersion: Int) {
         val packet = LoginStartPacket(
-            username = configuration.encryptionCheckUsername!!,
+            username = configuration.encryptionCheck.username!!,
             protocolVersion = protocolVersion
         ).toByteArray()
 
