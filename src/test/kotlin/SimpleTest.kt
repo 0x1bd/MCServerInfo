@@ -1,11 +1,11 @@
 import com.kvxd.mcserverinfo.MCServerQuery
 import com.kvxd.mcserverinfo.MCServerQueryResponse
+import com.kvxd.mcserverinfo.OnlineMode
 import kotlinx.coroutines.runBlocking
 import net.kyori.adventure.text.Component
+import kotlin.random.Random
 import kotlin.system.measureTimeMillis
-import kotlin.test.Test
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 class SimpleTest {
 
@@ -18,28 +18,41 @@ class SimpleTest {
                 players = MCServerQueryResponse.Players(max = 20, online = 0)
             )
 
-            val serverAddress = "localhost"
-            val query = MCServerQuery(serverAddress)
-
-            assertTrue { query.isReachable() }
+            val query = MCServerQuery.create {
+                address = "localhost"
+                encryptionCheckUsername = "CoolGuy69"
+            }
 
             val response = query.query()
+
+            assertTrue(query.isReachable(), "Local server not reachable. Forgot to start it?")
+
+            assertEquals(query.isEncrypted(response), OnlineMode.OFFLINE)
+            assertEquals(query.isEncrypted(), OnlineMode.OFFLINE)
 
             assertTrue { response == expected }
         }
         println("Local Server query: $t ms")
     }
 
+
     @Test
     fun testHypixel() = runBlocking {
         val t = measureTimeMillis {
-            val serverAddress = "play.hypixel.net"
-            val query = MCServerQuery(serverAddress)
+            val query = MCServerQuery.create {
+                address = "play.hypixel.net"
+                encryptionCheckUsername = "test"
+            }
 
-            assertTrue(query.isReachable(), "Not reachable")
+            val response = query.query()
 
-            assertNotNull(query.query())
+            assertTrue(query.isReachable(), "Hypixel server not reachable. Are you/the server online?")
+
+            assertEquals(query.isEncrypted(response), OnlineMode.ONLINE)
+            assertEquals(query.isEncrypted(), OnlineMode.ONLINE)
+
         }
         println("Hypixel Server query: $t ms")
     }
+
 }

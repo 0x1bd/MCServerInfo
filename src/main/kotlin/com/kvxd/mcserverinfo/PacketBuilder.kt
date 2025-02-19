@@ -33,5 +33,15 @@ class PacketBuilder {
         return this
     }
 
+    fun writeLong(value: Long): PacketBuilder {
+        dataOutputStream.writeLong(value)
+        return this
+    }
+    
+    fun writeBoolean(value: Boolean): PacketBuilder {
+        dataOutputStream.writeBoolean(value)
+        return this
+    }
+
     fun toByteArray(): ByteArray = byteArrayOutputStream.toByteArray()
 }
