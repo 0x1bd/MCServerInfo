@@ -5,6 +5,7 @@ import java.io.DataOutputStream
 import java.nio.charset.StandardCharsets
 
 class PacketBuilder {
+    
     private val byteArrayOutputStream = ByteArrayOutputStream()
     private val dataOutputStream = DataOutputStream(byteArrayOutputStream)
 

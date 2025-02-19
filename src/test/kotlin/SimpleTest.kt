@@ -1,6 +1,8 @@
-import com.kvxd.mcserverinfo.MinecraftServerPing
-import com.kvxd.mcserverinfo.ServerStatusResponse
+import com.kvxd.mcserverinfo.MCServerQuery
+import com.kvxd.mcserverinfo.MCServerQueryResponse
+import kotlinx.coroutines.runBlocking
 import net.kyori.adventure.text.Component
+import kotlin.system.measureTimeMillis
 import kotlin.test.Test
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -8,32 +10,36 @@ import kotlin.test.assertTrue
 class SimpleTest {
 
     @Test
-    fun test() {
-        val expected = ServerStatusResponse(
-            version = ServerStatusResponse.Version("1.21.4", 769),
-            description = Component.text("A Minecraft Server"),
-            players = ServerStatusResponse.Players(max = 20, online = 0)
-        )
+    fun test() = runBlocking {
+        val t = measureTimeMillis {
+            val expected = MCServerQueryResponse(
+                version = MCServerQueryResponse.Version("1.21.4", 769),
+                description = Component.text("A Minecraft Server"),
+                players = MCServerQueryResponse.Players(max = 20, online = 0)
+            )
 
-        val serverAddress = "localhost"
-        val minecraftServerPing = MinecraftServerPing(serverAddress)
+            val serverAddress = "localhost"
+            val query = MCServerQuery(serverAddress)
 
-        assertTrue { minecraftServerPing.reachable }
+            assertTrue { query.isReachable() }
 
-        // Ping the server and get the response
-        val response = minecraftServerPing.ping()
+            val response = query.query()
 
-        // Assert that the response matches the expected value
-        assertTrue { response == expected }
+            assertTrue { response == expected }
+        }
+        println("Local Server query: $t ms")
     }
 
     @Test
-    fun testHypixel() {
-        val serverAddress = "play.hypixel.net"
-        val minecraftServerPing = MinecraftServerPing(serverAddress)
+    fun testHypixel() = runBlocking {
+        val t = measureTimeMillis {
+            val serverAddress = "play.hypixel.net"
+            val query = MCServerQuery(serverAddress)
 
-        assertTrue(minecraftServerPing.reachable, "Not reachable")
+            assertTrue(query.isReachable(), "Not reachable")
 
-        assertNotNull(minecraftServerPing.ping())
+            assertNotNull(query.query())
+        }
+        println("Hypixel Server query: $t ms")
     }
 }

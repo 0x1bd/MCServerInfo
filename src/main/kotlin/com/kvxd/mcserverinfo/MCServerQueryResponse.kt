@@ -2,7 +2,7 @@ package com.kvxd.mcserverinfo
 
 import net.kyori.adventure.text.TextComponent
 
-data class ServerStatusResponse(
+data class MCServerQueryResponse(
     val version: Version,
     val description: TextComponent,
     val players: Players,
