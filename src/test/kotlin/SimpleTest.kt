@@ -57,7 +57,7 @@ class SimpleTest {
     fun hypixel() = runBlocking {
         val t = measureTimeMillis {
             val query = MCServerQuery.create {
-                address = "localhost"
+                address = "play.hypixel.net"
                 
                 encryption {
                     enable()
