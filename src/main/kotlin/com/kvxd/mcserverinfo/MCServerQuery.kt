@@ -1,6 +1,11 @@
 package com.kvxd.mcserverinfo
 
 import com.google.gson.Gson
+import com.kvxd.mcserverinfo.protocol.*
+import com.kvxd.mcserverinfo.util.NetworkUtils.decompressZlib
+import com.kvxd.mcserverinfo.util.NetworkUtils.encodeVarInt
+import com.kvxd.mcserverinfo.util.NetworkUtils.readVarInt
+import com.kvxd.mcserverinfo.util.NetworkUtils.sendPacket
 import kotlinx.coroutines.*
 import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer
 import java.io.EOFException
@@ -9,7 +14,6 @@ import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 import java.nio.channels.AsynchronousSocketChannel
 import java.nio.charset.StandardCharsets
-import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.zip.DataFormatException
 import java.util.zip.Inflater
@@ -21,11 +25,11 @@ class MCServerQuery private constructor(
 
     suspend fun isReachable(): Boolean = coroutineScope {
         try {
-            withTimeoutOrNull(configuration.timeout.toLong()) {
+            withTimeoutOrNull(configuration.timeout) {
                 val channel = AsynchronousSocketChannel.open()
                 channel.use { c ->
                     c.connect(InetSocketAddress(configuration.address, configuration.port))
-                        .get(configuration.timeout.toLong(), TimeUnit.MILLISECONDS)
+                        .get(configuration.timeout, TimeUnit.MILLISECONDS)
                     true
                 }
             } ?: false
@@ -36,7 +40,7 @@ class MCServerQuery private constructor(
 
     suspend fun isEncrypted(query: MCServerQueryResponse? = null): OnlineMode = withTimeout(configuration.timeout) {
         val status = query ?: query()
-        val protocolVersion = status.version.protocol // Local variable
+        val protocolVersion = status.version.protocol
 
         AsynchronousSocketChannel.open().use { channel ->
             channel.connect(InetSocketAddress(configuration.address, configuration.port))
@@ -63,58 +67,39 @@ class MCServerQuery private constructor(
     }
 
     private fun sendHandshake(channel: AsynchronousSocketChannel, protocolVersion: Int) {
-        val packet = PacketBuilder()
-            .writeVarInt(0x00)
-            .writeVarInt(protocolVersion)
-            .writeString(configuration.address)
-            .writeShort(configuration.port)
-            .writeVarInt(1)
-            .toByteArray()
+        val packet = HandshakePacket(
+            protocolVersion = protocolVersion,
+            address = configuration.address,
+            port = configuration.port,
+            nextState = 1
+        ).toByteArray()
 
-        sendPacket(channel, packet)
+        channel.sendPacket(packet, configuration.timeout)
     }
 
     private fun sendStatusRequest(channel: AsynchronousSocketChannel) {
-        val packet = PacketBuilder()
-            .writeVarInt(0x00)
-            .toByteArray()
-
-        sendPacket(channel, packet)
+        val packet = StatusRequestPacket().toByteArray()
+        channel.sendPacket(packet, configuration.timeout)
     }
-    
-    private fun sendLoginHandshake(channel: AsynchronousSocketChannel, protocolVersion: Int) {
-        val packet = PacketBuilder().apply {
-            writeVarInt(0x00)
-            writeVarInt(protocolVersion)
-            writeString(configuration.address)
-            writeShort(configuration.port)
-            writeVarInt(2) // Next state: 2 for login
-        }.toByteArray()
 
-        sendPacket(channel, packet)
+    private fun sendLoginHandshake(channel: AsynchronousSocketChannel, protocolVersion: Int) {
+        val packet = HandshakePacket(
+            protocolVersion = protocolVersion,
+            address = configuration.address,
+            port = configuration.port,
+            nextState = 2
+        ).toByteArray()
+
+        channel.sendPacket(packet, configuration.timeout)
     }
 
     private fun sendLoginStart(channel: AsynchronousSocketChannel, protocolVersion: Int) {
-        if (configuration.encryptionCheckUsername == null) throw IllegalStateException("Encryption check not supported if encryptionCheckUsername is null")
+        val packet = LoginStartPacket(
+            username = configuration.encryptionCheckUsername!!,
+            protocolVersion = protocolVersion
+        ).toByteArray()
 
-        val uuid = if (protocolVersion >= 761) {
-            val name = "OfflinePlayer:${configuration.encryptionCheckUsername}"
-            UUID.nameUUIDFromBytes(name.toByteArray(StandardCharsets.UTF_8))
-        } else {
-            UUID(0, 0) // For versions <761, UUID is not sent
-        }
-
-        val packet = PacketBuilder().apply {
-            writeVarInt(0x00) // Login Start packet ID
-            writeString(configuration.encryptionCheckUsername!!)
-
-            if (protocolVersion >= 761) {
-                writeLong(uuid.mostSignificantBits)
-                writeLong(uuid.leastSignificantBits)
-            }
-        }.toByteArray()
-
-        sendPacket(channel, packet)
+        channel.sendPacket(packet, configuration.timeout)
     }
 
     private suspend fun checkForEncryptionRequest(channel: AsynchronousSocketChannel): OnlineMode {
@@ -122,7 +107,7 @@ class MCServerQuery private constructor(
 
         return try {
             while (true) {
-                val packetLength = readVarInt(channel)
+                val packetLength = channel.readVarInt(configuration.timeout)
 
                 val packetBuffer = if (compressionThreshold == -1) {
                     ByteBuffer.allocate(packetLength).apply {
@@ -149,8 +134,7 @@ class MCServerQuery private constructor(
                     }
                 }
 
-                val packetId = packetBuffer.readVarInt()
-                when (packetId) {
+                when (val packetId = packetBuffer.readVarInt()) {
                     0x00 -> return handleDisconnect(packetBuffer)
                     0x01 -> return OnlineMode.ONLINE
                     0x02 -> return OnlineMode.OFFLINE
@@ -176,43 +160,19 @@ class MCServerQuery private constructor(
         return String(bytes, StandardCharsets.UTF_8)
     }
 
-    private fun decompressZlib(data: ByteArray, expectedLength: Int): ByteArray {
-        val inflater = Inflater()
-        inflater.setInput(data)
-        val result = ByteArray(expectedLength)
-        val resultLength = inflater.inflate(result)
-        inflater.end()
-        if (resultLength != expectedLength) {
-            throw IOException("Decompressed data length mismatch: expected $expectedLength, got $resultLength")
-        }
-        return result
-    }
-    
     private fun handleLoginPluginRequest(channel: AsynchronousSocketChannel, buffer: ByteBuffer) {
         val messageId = buffer.readVarInt()
         val channelName = buffer.readString()
         val data = ByteArray(buffer.remaining()).apply { buffer.get(this) }
 
-        // Respond indicating no data understood
-        val response = PacketBuilder()
-            .writeVarInt(0x02) // Login Plugin Response ID
-            .writeVarInt(messageId)
-            .writeBoolean(false)
-            .toByteArray()
-
+        val response = LoginPluginResponsePacket(messageId).toByteArray()
         sendPacket(channel, response)
     }
 
     private fun handleCookieRequest(channel: AsynchronousSocketChannel, buffer: ByteBuffer) {
         val key = buffer.readString()
 
-        // Respond with no payload
-        val response = PacketBuilder()
-            .writeVarInt(0x04) // Cookie Response ID
-            .writeString(key)
-            .writeBoolean(false) // No payload
-            .toByteArray()
-
+        val response = CookieResponsePacket(key).toByteArray()
         sendPacket(channel, response)
     }
 
@@ -250,7 +210,7 @@ class MCServerQuery private constructor(
     }
 
     private suspend fun parseResponse(channel: AsynchronousSocketChannel): MCServerQueryResponse {
-        val packetLength = readVarInt(channel)
+        val packetLength = channel.readVarInt(configuration.timeout)
 
         val packetBuffer = ByteBuffer.allocate(packetLength).apply {
             channel.readFully(this)
@@ -266,56 +226,6 @@ class MCServerQuery private constructor(
         }
 
         return gson.fromJson(String(jsonBytes, StandardCharsets.UTF_8), MCServerQueryResponse::class.java)
-    }
-
-    private fun ByteBuffer.readVarInt(): Int {
-        var value = 0
-        var position = 0
-        var currentByte: Int
-
-        do {
-            currentByte = get().toInt() and 0xFF
-            value = value or ((currentByte and 0x7F) shl position)
-            position += 7
-        } while ((currentByte and 0x80) != 0)
-
-        return value
-    }
-
-    private suspend fun readVarInt(channel: AsynchronousSocketChannel): Int {
-        var value = 0
-        var position = 0
-        var currentByte: Int
-
-        do {
-            val byteBuffer = ByteBuffer.allocate(1)
-            withContext(Dispatchers.IO) {
-                channel.read(byteBuffer).get(configuration.timeout, TimeUnit.MILLISECONDS)
-            }
-            byteBuffer.flip()
-            currentByte = byteBuffer.get().toInt() and 0xFF
-            value = value or ((currentByte and 0x7F) shl position)
-            position += 7
-        } while ((currentByte and 0x80) != 0)
-
-        return value
-    }
-
-    private fun encodeVarInt(value: Int): ByteBuffer {
-        val buffer = ByteBuffer.allocate(5)
-        var remaining = value
-
-        do {
-            var temp = (remaining and 0x7F).toByte()
-            remaining = remaining ushr 7
-            if (remaining != 0) {
-                temp = (temp.toInt() or 0x80).toByte()
-            }
-            buffer.put(temp)
-        } while (remaining != 0)
-
-        buffer.flip()
-        return buffer
     }
 
     companion object {
