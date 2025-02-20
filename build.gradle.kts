@@ -5,12 +5,15 @@ plugins {
 }
 
 group = "com.kvxd"
-version = "0.3.0"
+version = "0.4.0"
 
 repositories {
     mavenCentral()
 
     maven("https://repo.papermc.io/repository/maven-public/")
+
+    maven("https://repo.opencollab.dev/maven-releases/")
+    maven("https://repo.opencollab.dev/maven-snapshots/")
 }
 
 dependencies {
@@ -18,6 +21,8 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1")
     implementation("net.kyori:adventure-text-serializer-gson:4.18.0")
     implementation("net.kyori:adventure-text-serializer-legacy:4.18.0")
+
+    implementation("org.geysermc.mcprotocollib:protocol:1.21.4-SNAPSHOT")
 
     testImplementation(kotlin("test"))
 }

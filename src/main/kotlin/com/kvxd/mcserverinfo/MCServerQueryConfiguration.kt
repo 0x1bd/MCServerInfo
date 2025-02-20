@@ -14,9 +14,14 @@ data class MCServerQueryConfiguration(
             enabled = true
         }
     }
-    
+
     fun encryption(encryptionCheck: EncryptionCheck.() -> Unit): EncryptionCheck {
         this.encryptionCheck = EncryptionCheck().apply(encryptionCheck)
+        return this.encryptionCheck
+    }
+
+    fun encryption(encryptionCheck: EncryptionCheck): EncryptionCheck {
+        this.encryptionCheck = encryptionCheck
         return this.encryptionCheck
     }
     
